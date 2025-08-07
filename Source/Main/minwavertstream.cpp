@@ -1,6 +1,7 @@
 #include "definitions.h"
 #include <limits.h>
 #include <ks.h>
+#include <ntstrsafe.h>
 #include "endpoints.h"
 #include "minwavert.h"
 #include "minwavertstream.h"
@@ -96,6 +97,9 @@ Return Value:
     // DPCs to complete before we free the notification DPC.
     //
     KeFlushQueuedDpcs();
+
+    // Cleanup named pipe resources
+    CleanupNamedPipe();
 
     DPF_ENTER(("[CMiniportWaveRTStream::~CMiniportWaveRTStream]"));
 } // ~CMiniportWaveRTStream
@@ -240,6 +244,15 @@ Return Value:
     // Initialize the spinlock to synchronize position updates
     KeInitializeSpinLock(&m_PositionSpinLock);
 
+    // Initialize named pipe variables
+    m_hNamedPipe = NULL;
+    m_pNamedPipeEvent = NULL;
+    m_bNamedPipeEnabled = FALSE;
+    m_ulPipeBufferSize = 0;
+    m_pPipeBuffer = NULL;
+    KeInitializeSpinLock(&m_NamedPipeSpinLock);
+    RtlZeroMemory(m_wszPipeName, sizeof(m_wszPipeName));
+
     m_pNotificationTimer = ExAllocateTimer(
          TimerNotifyRT,
          this,
@@ -353,6 +366,14 @@ Return Value:
         if (!NT_SUCCESS(ntStatus))
         {
             return ntStatus;
+        }
+
+        // Initialize named pipe for capture stream
+        ntStatus = InitializeNamedPipe();
+        if (!NT_SUCCESS(ntStatus))
+        {
+            DPF(D_ERROR, ("Failed to initialize named pipe: 0x%x", ntStatus));
+            // Continue without named pipe support
         }
     }
     else if (!g_DoNotCreateDataFiles)
@@ -1397,7 +1418,7 @@ VOID CMiniportWaveRTStream::WriteBytes
 
 Routine Description:
 
-This function writes the audio buffer using silence instead of a tone generator
+This function writes the audio buffer reading data from named pipe or generating silence
 
 Arguments:
 
@@ -1413,8 +1434,31 @@ ByteDisplacement - # of bytes to process.
     {
         ULONG runWrite = min(ByteDisplacement, m_ulDmaBufferSize - bufferOffset);
         
-        // Instead of generating a tone, just output silence
-        RtlZeroMemory(m_pDmaBuffer + bufferOffset, runWrite);
+        // Try to read from named pipe if enabled
+        if (m_bNamedPipeEnabled && m_hNamedPipe)
+        {
+            ULONG bytesRead = 0;
+            NTSTATUS ntStatus = ReadFromNamedPipe(m_pDmaBuffer + bufferOffset, runWrite, &bytesRead);
+            
+            if (NT_SUCCESS(ntStatus) && bytesRead > 0)
+            {
+                // If we read less data than requested, fill the rest with silence
+                if (bytesRead < runWrite)
+                {
+                    RtlZeroMemory(m_pDmaBuffer + bufferOffset + bytesRead, runWrite - bytesRead);
+                }
+            }
+            else
+            {
+                // Failed to read from pipe or no data available, fill with silence
+                RtlZeroMemory(m_pDmaBuffer + bufferOffset, runWrite);
+            }
+        }
+        else
+        {
+            // Named pipe not available, fill with silence
+            RtlZeroMemory(m_pDmaBuffer + bufferOffset, runWrite);
+        }
            	
         bufferOffset = (bufferOffset + runWrite) % m_ulDmaBufferSize;
         ByteDisplacement -= runWrite;
@@ -1648,5 +1692,269 @@ End:
     KeReleaseSpinLock(&_this->m_PositionSpinLock, oldIrql);
     return;
 }
+
+//=============================================================================
+#pragma code_seg("PAGE")
+NTSTATUS CMiniportWaveRTStream::InitializeNamedPipe()
+/*++
+
+Routine Description:
+
+  Initializes the named pipe for microphone input
+
+Arguments:
+
+  None
+
+Return Value:
+
+  NT status code.
+
+--*/
+{
+    PAGED_CODE();
+    
+    // Set up the named pipe name
+    NTSTATUS ntStatus = RtlStringCchPrintfW(
+        m_wszPipeName,
+        ARRAYSIZE(m_wszPipeName),
+        L"\\Device\\NamedPipe\\VirtualMicInput_%d",
+        m_ulPin
+    );
+    
+    if (!NT_SUCCESS(ntStatus))
+    {
+        return ntStatus;
+    }
+    
+    // Allocate pipe buffer (4KB)
+    m_ulPipeBufferSize = 4096;
+    m_pPipeBuffer = (BYTE*)ExAllocatePool2(POOL_FLAG_NON_PAGED, m_ulPipeBufferSize, MINWAVERTSTREAM_POOLTAG);
+    if (!m_pPipeBuffer)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    // Create named pipe
+    ntStatus = CreateNamedPipe();
+    if (NT_SUCCESS(ntStatus))
+    {
+        m_bNamedPipeEnabled = TRUE;
+        DPF(D_VERBOSE, ("Named pipe initialized: %S", m_wszPipeName));
+    }
+    
+    return ntStatus;
+}
+
+//=============================================================================
+#pragma code_seg("PAGE")
+NTSTATUS CMiniportWaveRTStream::CreateNamedPipe()
+/*++
+
+Routine Description:
+
+  Creates the named pipe
+
+Arguments:
+
+  None
+
+Return Value:
+
+  NT status code.
+
+--*/
+{
+    PAGED_CODE();
+    
+    UNICODE_STRING pipeName;
+    OBJECT_ATTRIBUTES objAttribs;
+    IO_STATUS_BLOCK ioStatusBlock;
+    
+    RtlInitUnicodeString(&pipeName, m_wszPipeName);
+    
+    InitializeObjectAttributes(
+        &objAttribs,
+        &pipeName,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+        NULL,
+        NULL
+    );
+    
+    NTSTATUS ntStatus = ZwCreateNamedPipeFile(
+        &m_hNamedPipe,
+        GENERIC_READ | SYNCHRONIZE,
+        &objAttribs,
+        &ioStatusBlock,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        FILE_CREATE,
+        FILE_PIPE_BYTE_STREAM_MODE | FILE_PIPE_REJECT_REMOTE_CLIENTS,
+        FILE_PIPE_BYTE_STREAM_TYPE,
+        FILE_PIPE_QUEUE_OPERATION,
+        1,          // MaximumInstances
+        m_ulPipeBufferSize,  // InboundQuota
+        m_ulPipeBufferSize,  // OutboundQuota
+        NULL        // DefaultTimeout
+    );
+    
+    if (!NT_SUCCESS(ntStatus))
+    {
+        DPF(D_ERROR, ("Failed to create named pipe: 0x%x", ntStatus));
+        m_hNamedPipe = NULL;
+    }
+    
+    return ntStatus;
+}
+
+//=============================================================================
+#pragma code_seg()
+VOID CMiniportWaveRTStream::CleanupNamedPipe()
+/*++
+
+Routine Description:
+
+  Cleans up named pipe resources
+
+Arguments:
+
+  None
+
+Return Value:
+
+  None
+
+--*/
+{
+    m_bNamedPipeEnabled = FALSE;
+    
+    if (m_hNamedPipe)
+    {
+        ZwClose(m_hNamedPipe);
+        m_hNamedPipe = NULL;
+    }
+    
+    if (m_pNamedPipeEvent)
+    {
+        ObDereferenceObject(m_pNamedPipeEvent);
+        m_pNamedPipeEvent = NULL;
+    }
+    
+    if (m_pPipeBuffer)
+    {
+        ExFreePoolWithTag(m_pPipeBuffer, MINWAVERTSTREAM_POOLTAG);
+        m_pPipeBuffer = NULL;
+    }
+}
+
+//=============================================================================
+#pragma code_seg()
+NTSTATUS CMiniportWaveRTStream::ReadFromNamedPipe(
+    _Out_ BYTE* pBuffer, 
+    _In_ ULONG ulBufferSize, 
+    _Out_ ULONG* pulBytesRead
+)
+/*++
+
+Routine Description:
+
+  Reads data from the named pipe
+
+Arguments:
+
+  pBuffer - Buffer to read data into
+  ulBufferSize - Size of buffer
+  pulBytesRead - Number of bytes actually read
+
+Return Value:
+
+  NT status code.
+
+--*/
+{
+    if (!m_hNamedPipe || !pBuffer || !pulBytesRead)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    *pulBytesRead = 0;
+    
+    IO_STATUS_BLOCK ioStatusBlock;
+    NTSTATUS ntStatus = ZwReadFile(
+        m_hNamedPipe,
+        NULL,           // Event
+        NULL,           // ApcRoutine
+        NULL,           // ApcContext
+        &ioStatusBlock,
+        pBuffer,
+        ulBufferSize,
+        NULL,           // ByteOffset
+        NULL            // Key
+    );
+    
+    if (NT_SUCCESS(ntStatus))
+    {
+        *pulBytesRead = (ULONG)ioStatusBlock.Information;
+    }
+    else if (ntStatus == STATUS_PIPE_EMPTY || ntStatus == STATUS_PIPE_BROKEN)
+    {
+        // No data available or pipe broken, return success with 0 bytes
+        ntStatus = STATUS_SUCCESS;
+        *pulBytesRead = 0;
+    }
+    
+    return ntStatus;
+}
+
+//=============================================================================
+#pragma code_seg()
+NTSTATUS CMiniportWaveRTStream::HandleIoctlRequest(
+    _In_ ULONG ulIoControlCode,
+    _In_ PVOID pInputBuffer,
+    _In_ ULONG ulInputBufferSize
+)
+/*++
+
+Routine Description:
+
+  Handles IOCTL requests for direct audio input
+
+Arguments:
+
+  ulIoControlCode - IOCTL code
+  pInputBuffer - Input buffer containing audio data
+  ulInputBufferSize - Size of input buffer
+
+Return Value:
+
+  NT status code.
+
+--*/
+{
+    UNREFERENCED_PARAMETER(ulIoControlCode);
+    
+    if (!pInputBuffer || ulInputBufferSize == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    // For now, this is a placeholder for IOCTL-based audio input
+    // In a real implementation, you would process the IOCTL code
+    // and handle the audio data accordingly
+    
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&m_NamedPipeSpinLock, &oldIrql);
+    
+    // Copy data to internal buffer for later consumption
+    if (m_pPipeBuffer && ulInputBufferSize <= m_ulPipeBufferSize)
+    {
+        RtlCopyMemory(m_pPipeBuffer, pInputBuffer, ulInputBufferSize);
+        // Could set a flag here to indicate new data is available
+    }
+    
+    KeReleaseSpinLock(&m_NamedPipeSpinLock, oldIrql);
+    
+    return STATUS_SUCCESS;
+}
+
 //=============================================================================
 

@@ -129,6 +129,15 @@ protected:
     DWORD                       m_dwLoopbackCaptureToneInitialPhase; // must be between -31416 to 31416
     // Member variable as config params for tone generator
 
+    // Named pipe support for microphone input
+    HANDLE                      m_hNamedPipe;
+    PKEVENT                     m_pNamedPipeEvent;
+    BOOLEAN                     m_bNamedPipeEnabled;
+    WCHAR                       m_wszPipeName[256];
+    KSPIN_LOCK                  m_NamedPipeSpinLock;
+    ULONG                       m_ulPipeBufferSize;
+    BYTE*                       m_pPipeBuffer;
+
 public:
 
     //presentation
@@ -147,6 +156,13 @@ public:
     {
         return InterlockedExchange(&m_IsCurrentWritePositionUpdated, 0) ? TRUE : FALSE;
     };
+
+    // Named pipe functions
+    NTSTATUS InitializeNamedPipe();
+    NTSTATUS CreateNamedPipe();
+    VOID CleanupNamedPipe();
+    NTSTATUS ReadFromNamedPipe(_Out_ BYTE* pBuffer, _In_ ULONG ulBufferSize, _Out_ ULONG* pulBytesRead);
+    NTSTATUS HandleIoctlRequest(_In_ ULONG ulIoControlCode, _In_ PVOID pInputBuffer, _In_ ULONG ulInputBufferSize);
 
     GUID GetSignalProcessingMode()
     {
@@ -189,6 +205,13 @@ private:
     );
 
     NTSTATUS ReadRegistrySettings();
+
+    // Named pipe functions
+    NTSTATUS InitializeNamedPipe();
+    NTSTATUS CreateNamedPipe();
+    VOID CleanupNamedPipe();
+    NTSTATUS ReadFromNamedPipe(_Out_ BYTE* pBuffer, _In_ ULONG ulBufferSize, _Out_ ULONG* pulBytesRead);
+    NTSTATUS HandleIoctlRequest(_In_ ULONG ulIoControlCode, _In_ PVOID pInputBuffer, _In_ ULONG ulInputBufferSize);
     
 };
 typedef CMiniportWaveRTStream *PCMiniportWaveRTStream;
