@@ -8,32 +8,45 @@
 > [!NOTE]
 > Software Developers/Organizations: Looking to implement Virtual speakers/mics into your app? For advanced/custom functionality like named pipes, shared memory buffers (for no-latency audio), direct integration with your existing apps, and more; Contact us for quotes on a custom build! contact@mikethetech.com
 
-# Virtual Audio Driver by MikeTheTech
+# Virtual Audio Driver by MikeTheTech (Modified - Microphone Only)
 
-Welcome to the **Virtual Audio Driver by MikeTheTech**! This project provides two key drivers based on the Windows Driver Kit (WDK):
+**🎤 This is a modified version that provides ONLY virtual microphone functionality with named pipe input support.**
 
-- **Virtual Audio Driver** – Creates a virtual speaker output device and a virtual microphone input device.
+Welcome to the **Modified Virtual Audio Driver**! This version has been specifically modified to:
 
-Both features in the driver are suitable for remote desktop sessions, headless configurations, streaming setups, and more. They support Windows 10 and Windows 11, including advanced audio features like Windows Sonic (Spatial Sound), Exclusive Mode, Application Priority, and volume control.
+- **✅ Provide only virtual microphone input** (speaker output completely removed)
+- **✅ Accept audio data exclusively via named pipe interface**
+- **✅ Support IOCTL-based direct audio injection**
+- **✅ Prevent other applications from using the microphone as standard input**
 
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/1e833f96-5565-4938-a242-b239074012b0" alt="image">
-  <img src="https://github.com/user-attachments/assets/db8c23f3-cf2d-409f-ada8-38d0aa8450a8" width="31%" alt="image">
-  <img src="https://github.com/user-attachments/assets/8cf14cc2-4ab0-41ad-a6b2-5a77b004a943" width="31%" alt="image">
-  <img src="https://github.com/user-attachments/assets/5f2e23cb-75d3-4557-98ff-7c717f47dcdd" width="31%" alt="image">
-</div>
+**Original Features Removed:**
+- ❌ Virtual speaker output device  
+- ❌ Audio rendering/playback capabilities
+- ❌ Property pages for external application input
 
-## Overview
+The modified virtual audio driver provides:
 
-A virtual audio driver set consists of:
+- **Virtual Microphone with Named Pipe Input** – A virtual microphone that accepts audio data exclusively through a named pipe interface (`\\.\pipe\VirtualMicInput_0`), perfect for applications that need to inject custom audio data programmatically.
 
-- **Virtual Audio** ("fake" speaker output)  
-  - Essential for headless servers, remote desktop streaming, testing audio in environments without physical speakers, etc.
+## Key Modifications
 
-- **Virtual Microphone** ("fake" mic input)  
-  - Ideal for streaming setups, voice chat tests, combining or routing audio internally, or feeding software-generated audio to apps expecting a microphone input.
+This version has been specifically modified for applications requiring:
+- **Exclusive control over microphone input** – Only your application can provide audio data
+- **Programmatic audio injection** – Send audio data directly via named pipe or IOCTL
+- **No interference from other apps** – Standard Windows audio applications cannot access the microphone
+- **Simplified driver architecture** – Microphone-only implementation reduces complexity
 
-By installing these drivers, you can process or forward audio without physical hardware present, making them incredibly useful for various development, testing, and media production scenarios.
+## Named Pipe Interface
+
+Your applications can send audio data to the virtual microphone using:
+
+```
+Pipe Name: \\.\pipe\VirtualMicInput_0
+Format: 16-bit PCM, 44.1kHz, Stereo
+Access: Write-only from user applications
+```
+
+See [NAMED_PIPE_USAGE.md](NAMED_PIPE_USAGE.md) for detailed usage examples and API documentation.
 
 ---
 
