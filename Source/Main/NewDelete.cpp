@@ -22,7 +22,7 @@ extern "C" {
 #include <wdm.h>
 #endif
 
-#include "newDelete.h"
+#include "NewDelete.h"
 #include "definitions.h"
 
 #pragma code_seg()
@@ -79,6 +79,23 @@ void __cdecl operator delete
     if (pVoid)
     {
         ExFreePoolWithTag(pVoid, tag);
+    }
+}
+
+
+/*****************************************************************************
+* ::delete()
+*****************************************************************************
+* Basic Delete function.
+*/
+void __cdecl operator delete
+(
+    PVOID pVoid
+)
+{
+    if (pVoid)
+    {
+        ExFreePoolWithTag(pVoid, VIRTUALAUDIODRIVER_POOLTAG);
     }
 }
 
