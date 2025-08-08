@@ -48,6 +48,23 @@ Access: Write-only from user applications
 
 See [NAMED_PIPE_USAGE.md](NAMED_PIPE_USAGE.md) for detailed usage examples and API documentation.
 
+## Quick Start with Named Pipes
+
+1. **Install the driver** using Device Manager (see Installation section below)
+2. **Run an example application** to create the named pipe:
+   ```bash
+   # C++ Example  
+   cd examples
+   cl CreatePipeExample.cpp && CreatePipeExample.exe
+   
+   # Python Example (requires: pip install pywin32 numpy)
+   python create_pipe_example.py
+   ```
+3. **Set the virtual microphone** as your default recording device in Windows Sound Settings
+4. **Test with any application** that uses microphone input (Discord, OBS, etc.)
+
+**📁 Example Applications**: Check the [`examples/`](examples/) directory for complete working examples in C++ and Python that demonstrate proper named pipe creation and usage.
+
 ---
 
 ## Key Features
