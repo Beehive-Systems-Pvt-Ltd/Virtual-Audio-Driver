@@ -17,6 +17,15 @@ Abstract:
 #include <math.h>
 #include <limits.h>
 
+// Define constants for kernel mode compatibility
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#ifndef _I32_MAX
+#define _I32_MAX 2147483647
+#endif
+
 class ToneGenerator
 {
 public:
