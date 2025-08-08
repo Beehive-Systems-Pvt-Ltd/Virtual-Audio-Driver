@@ -1769,7 +1769,6 @@ Return Value:
     
     UNICODE_STRING pipeName;
     OBJECT_ATTRIBUTES objAttribs;
-    IO_STATUS_BLOCK ioStatusBlock;
     
     RtlInitUnicodeString(&pipeName, m_wszPipeName);
     
