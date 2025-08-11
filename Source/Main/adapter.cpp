@@ -341,6 +341,11 @@ Return Value:
     DriverObject->MajorFunction[IRP_MJ_PNP] = PnpHandler;
 
     //
+    // To handle device control requests (IOCTLs).
+    //
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DeviceControlHandler;
+
+    //
     // Hook the port class unload function
     //
     gPCDriverUnloadRoutine = DriverObject->DriverUnload;
@@ -838,6 +843,115 @@ Return Value:
     
     ntStatus = PcDispatchIrp(_DeviceObject, _Irp);
 
+    return ntStatus;
+}
+
+//=============================================================================
+#pragma code_seg("PAGE")
+NTSTATUS 
+DeviceControlHandler
+(
+    _In_ DEVICE_OBJECT *DeviceObject, 
+    _Inout_ IRP *Irp
+)
+/*++
+
+Routine Description:
+
+  Handles device control (IOCTL) IRPs                                                           
+
+Arguments:
+
+  DeviceObject - Functional Device object pointer.
+
+  Irp - The Irp being passed
+
+Return Value:
+
+  NT status code.
+
+--*/
+{
+    NTSTATUS ntStatus = STATUS_INVALID_DEVICE_REQUEST;
+    PIO_STACK_LOCATION irpStack;
+    ULONG ioControlCode;
+    ULONG inputBufferLength;
+    ULONG outputBufferLength;
+    PVOID systemBuffer;
+
+    PAGED_CODE();
+
+    ASSERT(DeviceObject);
+    ASSERT(Irp);
+
+    DPF(D_VERBOSE, ("[DeviceControlHandler] Enter"));
+
+    irpStack = IoGetCurrentIrpStackLocation(Irp);
+    ioControlCode = irpStack->Parameters.DeviceIoControl.IoControlCode;
+    inputBufferLength = irpStack->Parameters.DeviceIoControl.InputBufferLength;
+    outputBufferLength = irpStack->Parameters.DeviceIoControl.OutputBufferLength;
+    systemBuffer = Irp->AssociatedIrp.SystemBuffer;
+
+    Irp->IoStatus.Information = 0;
+
+    switch (ioControlCode)
+    {
+    case IOCTL_VIRTUAL_AUDIO_GET_INFO:
+        {
+            DPF(D_VERBOSE, ("[DeviceControlHandler] IOCTL_VIRTUAL_AUDIO_GET_INFO"));
+            
+            if (outputBufferLength < sizeof(VIRTUAL_AUDIO_INFO))
+            {
+                ntStatus = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            PVIRTUAL_AUDIO_INFO pInfo = (PVIRTUAL_AUDIO_INFO)systemBuffer;
+            RtlZeroMemory(pInfo, sizeof(VIRTUAL_AUDIO_INFO));
+            
+            // Fill in driver information
+            pInfo->DriverVersion = 1;
+            pInfo->SpeakerDeviceCount = g_cRenderEndpoints;
+            pInfo->MicrophoneDeviceCount = g_cCaptureEndpoints;
+            
+            Irp->IoStatus.Information = sizeof(VIRTUAL_AUDIO_INFO);
+            ntStatus = STATUS_SUCCESS;
+        }
+        break;
+
+    case IOCTL_VIRTUAL_AUDIO_GET_STATUS:
+        {
+            DPF(D_VERBOSE, ("[DeviceControlHandler] IOCTL_VIRTUAL_AUDIO_GET_STATUS"));
+            
+            if (outputBufferLength < sizeof(VIRTUAL_AUDIO_STATUS))
+            {
+                ntStatus = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+
+            PVIRTUAL_AUDIO_STATUS pStatus = (PVIRTUAL_AUDIO_STATUS)systemBuffer;
+            RtlZeroMemory(pStatus, sizeof(VIRTUAL_AUDIO_STATUS));
+            
+            // Fill in basic status information
+            pStatus->SpeakerActive = (g_cRenderEndpoints > 0) ? TRUE : FALSE;
+            pStatus->MicrophoneActive = (g_cCaptureEndpoints > 0) ? TRUE : FALSE;
+            pStatus->CurrentSampleRate = 44100; // Default sample rate
+            
+            Irp->IoStatus.Information = sizeof(VIRTUAL_AUDIO_STATUS);
+            ntStatus = STATUS_SUCCESS;
+        }
+        break;
+
+    default:
+        DPF(D_WARNING, ("[DeviceControlHandler] Unsupported IOCTL: 0x%x", ioControlCode));
+        ntStatus = STATUS_INVALID_DEVICE_REQUEST;
+        break;
+    }
+
+    Irp->IoStatus.Status = ntStatus;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    DPF(D_VERBOSE, ("[DeviceControlHandler] Exit: 0x%x", ntStatus));
     return ntStatus;
 }
 
