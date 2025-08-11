@@ -21,6 +21,7 @@ Abstract:
 #include <wdf.h>
 #include <wdfminiport.h>
 #include <Ntstrsafe.h>
+#include <ntddk.h>
 #include "NewDelete.h"
 
 //=============================================================================
@@ -99,6 +100,33 @@ DEFINE_GUIDSTRUCT("836BA6D1-3FF7-4411-8BCD-469553452DCE", PID_VIRTUALAUDIODRIVER
 
 #define ALL_CHANNELS_ID             UINT32_MAX
 
+//=============================================================================
+// IOCTL Definitions
+//=============================================================================
+
+// Device type for Virtual Audio Driver IOCTLs
+#define FILE_DEVICE_VIRTUAL_AUDIO   0x8000
+
+// IOCTL function codes
+#define IOCTL_VIRTUAL_AUDIO_GET_INFO    CTL_CODE(FILE_DEVICE_VIRTUAL_AUDIO, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_VIRTUAL_AUDIO_GET_STATUS  CTL_CODE(FILE_DEVICE_VIRTUAL_AUDIO, 0x801, METHOD_BUFFERED, FILE_READ_ACCESS)
+
+// Structure for driver information
+typedef struct _VIRTUAL_AUDIO_INFO {
+    ULONG DriverVersion;
+    ULONG SpeakerDeviceCount;
+    ULONG MicrophoneDeviceCount;
+    ULONG Reserved[5];
+} VIRTUAL_AUDIO_INFO, *PVIRTUAL_AUDIO_INFO;
+
+// Structure for driver status
+typedef struct _VIRTUAL_AUDIO_STATUS {
+    BOOLEAN SpeakerActive;
+    BOOLEAN MicrophoneActive;
+    ULONG CurrentSampleRate;
+    ULONG Reserved[7];
+} VIRTUAL_AUDIO_STATUS, *PVIRTUAL_AUDIO_STATUS;
+
 // Macros to assist with pin instance counting
 #define VERIFY_PIN_INSTANCE_RESOURCES_AVAILABLE(status, allocated, max) \
     status = (allocated < max) ? STATUS_SUCCESS : STATUS_INSUFFICIENT_RESOURCES
@@ -172,6 +200,10 @@ extern UNICODE_STRING g_RegistryPath;
 //=============================================================================
 // Function prototypes
 //=============================================================================
+
+// Device control handler for IOCTL requests
+_Dispatch_type_(IRP_MJ_DEVICE_CONTROL)
+DRIVER_DISPATCH DeviceControlHandler;
 
 // Generic topology handler
 NTSTATUS PropertyHandler_Topology
