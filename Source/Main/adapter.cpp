@@ -592,30 +592,30 @@ InstallEndpointRenderFilters(
     return ntStatus;
 }
 
-#pragma code_seg("PAGE")
-NTSTATUS 
-InstallAllRenderFilters(
-    _In_ PDEVICE_OBJECT _pDeviceObject, 
-    _In_ PIRP           _pIrp, 
-    _In_ PADAPTERCOMMON _pAdapterCommon
-    )
-{
-    NTSTATUS            ntStatus;
-    PENDPOINT_MINIPAIR* ppAeMiniports   = g_RenderEndpoints;
-    
-    PAGED_CODE();
-
-    for(ULONG i = 0; i < g_cRenderEndpoints; ++i, ++ppAeMiniports)
-    {
-        ntStatus = InstallEndpointRenderFilters(_pDeviceObject, _pIrp, _pAdapterCommon, *ppAeMiniports);
-        IF_FAILED_JUMP(ntStatus, Exit);
-    }
-    
-    ntStatus = STATUS_SUCCESS;
-
-Exit:
-    return ntStatus;
-}
+//#pragma code_seg("PAGE")
+//NTSTATUS 
+//InstallAllRenderFilters(
+//    _In_ PDEVICE_OBJECT _pDeviceObject, 
+//    _In_ PIRP           _pIrp, 
+//    _In_ PADAPTERCOMMON _pAdapterCommon
+//    )
+//{
+//    NTSTATUS            ntStatus;
+//    PENDPOINT_MINIPAIR* ppAeMiniports   = g_RenderEndpoints;
+//    
+//    PAGED_CODE();
+//
+//    for(ULONG i = 0; i < g_cRenderEndpoints; ++i, ++ppAeMiniports)
+//    {
+//        ntStatus = InstallEndpointRenderFilters(_pDeviceObject, _pIrp, _pAdapterCommon, *ppAeMiniports);
+//        IF_FAILED_JUMP(ntStatus, Exit);
+//    }
+//    
+//    ntStatus = STATUS_SUCCESS;
+//
+//Exit:
+//    return ntStatus;
+//}
 
 #pragma code_seg("PAGE")
 NTSTATUS

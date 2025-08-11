@@ -157,13 +157,6 @@ public:
         return InterlockedExchange(&m_IsCurrentWritePositionUpdated, 0) ? TRUE : FALSE;
     };
 
-    // Named pipe functions
-    NTSTATUS InitializeNamedPipe();
-    NTSTATUS CreateNamedPipe();
-    VOID CleanupNamedPipe();
-    NTSTATUS ReadFromNamedPipe(_Out_ BYTE* pBuffer, _In_ ULONG ulBufferSize, _Out_ ULONG* pulBytesRead);
-    NTSTATUS HandleIoctlRequest(_In_ ULONG ulIoControlCode, _In_ PVOID pInputBuffer, _In_ ULONG ulInputBufferSize);
-
     GUID GetSignalProcessingMode()
     {
         return m_SignalProcessingMode;
@@ -209,6 +202,7 @@ private:
     // Named pipe functions
     NTSTATUS InitializeNamedPipe();
     NTSTATUS CreateNamedPipe();
+    NTSTATUS TryOpenExistingNamedPipe();
     VOID CleanupNamedPipe();
     NTSTATUS ReadFromNamedPipe(_Out_ BYTE* pBuffer, _In_ ULONG ulBufferSize, _Out_ ULONG* pulBytesRead);
     NTSTATUS HandleIoctlRequest(_In_ ULONG ulIoControlCode, _In_ PVOID pInputBuffer, _In_ ULONG ulInputBufferSize);
